@@ -5,7 +5,8 @@ import type { Bucket } from "@/lib/range";
 import type { Point } from "@/lib/stats";
 
 // Stacked bar chart of page views per bucket: people at the base, bots on
-// top (when shown). Hovering or focusing a column shows its exact numbers.
+// top, each series drawn only when shown. Hovering or focusing a column
+// shows its exact numbers.
 
 const HEIGHT = 240;
 const PAD = { top: 12, right: 8, bottom: 28, left: 36 };
@@ -34,10 +35,12 @@ function topRounded(x: number, y: number, w: number, h: number, r: number): stri
 export function TrafficChart({
   points,
   bucket,
+  showHumans,
   showBots,
 }: {
   points: Point[];
   bucket: Bucket;
+  showHumans: boolean;
   showBots: boolean;
 }) {
   const box = useRef<HTMLDivElement>(null);
@@ -52,7 +55,9 @@ export function TrafficChart({
     return () => observer.disconnect();
   }, []);
 
-  const total = (p: Point) => p.humans + (showBots ? p.bots : 0);
+  const people = (p: Point) => (showHumans ? p.humans : 0);
+  const robots = (p: Point) => (showBots ? p.bots : 0);
+  const total = (p: Point) => people(p) + robots(p);
   const max = niceMax(Math.max(0, ...points.map(total)));
   const plotW = Math.max(0, width - PAD.left - PAD.right);
   const plotH = HEIGHT - PAD.top - PAD.bottom;
@@ -98,15 +103,17 @@ export function TrafficChart({
 
         {points.map((p, i) => {
           const x = PAD.left + i * slot + (slot - barW) / 2;
-          const humanTop = y(p.humans);
-          const botTop = y(p.humans + p.bots);
-          const showBot = showBots && p.bots > 0;
+          const h = people(p);
+          const b = robots(p);
+          const humanTop = y(h);
+          const botTop = y(h + b);
+          const showBot = b > 0;
           const humanH = y(0) - humanTop;
           // 2px surface gap between the stacked segments.
-          const botH = Math.max(0, humanTop - botTop - (p.humans > 0 ? 2 : 0));
+          const botH = Math.max(0, humanTop - botTop - (h > 0 ? 2 : 0));
           return (
             <g key={p.key} opacity={active === null || active === i ? 1 : 0.45}>
-              {p.humans > 0 && (
+              {h > 0 && (
                 <path
                   d={showBot ? `M${x},${y(0)}V${humanTop}H${x + barW}V${y(0)}Z` : topRounded(x, humanTop, barW, humanH, 4)}
                   fill="var(--series-human)"
@@ -125,7 +132,13 @@ export function TrafficChart({
                 height={plotH}
                 fill="transparent"
                 tabIndex={0}
-                aria-label={`${label(p.key, bucket)}: ${p.humans} human views${showBots ? `, ${p.bots} bot views` : ""}`}
+                aria-label={[
+                  label(p.key, bucket),
+                  showHumans ? `${p.humans} human views` : null,
+                  showBots ? `${p.bots} bot views` : null,
+                ]
+                  .filter(Boolean)
+                  .join(", ")}
                 onMouseEnter={() => setActive(i)}
                 onMouseLeave={() => setActive(null)}
                 onFocus={() => setActive(i)}
@@ -146,13 +159,15 @@ export function TrafficChart({
           <div className="mb-1 font-medium text-ink">
             {bucket === "hour" ? hovered.key.replace("T", " ") : label(hovered.key, bucket)}
           </div>
-          <div className="flex items-center justify-between gap-4 text-ink-2">
-            <span className="flex items-center gap-1.5">
-              <span className="size-2 rounded-sm bg-human" aria-hidden />
-              People
-            </span>
-            <span className="tabular-nums text-ink">{hovered.humans}</span>
-          </div>
+          {showHumans && (
+            <div className="flex items-center justify-between gap-4 text-ink-2">
+              <span className="flex items-center gap-1.5">
+                <span className="size-2 rounded-sm bg-human" aria-hidden />
+                People
+              </span>
+              <span className="tabular-nums text-ink">{hovered.humans}</span>
+            </div>
+          )}
           {showBots && (
             <div className="flex items-center justify-between gap-4 text-ink-2">
               <span className="flex items-center gap-1.5">

@@ -17,7 +17,13 @@ export const RANGES: Range[] = [
   { key: "90d", label: "Last 90 days", hours: 24 * 90, bucket: "day" },
 ];
 
-export type Traffic = "humans" | "all";
+export type Traffic = "humans" | "bots" | "all";
+
+export const TRAFFIC: { key: Traffic; label: string }[] = [
+  { key: "humans", label: "People only" },
+  { key: "bots", label: "Bots only" },
+  { key: "all", label: "All traffic" },
+];
 
 export interface Filters {
   range: Range;
@@ -35,7 +41,7 @@ function first(value: string | string[] | undefined): string | undefined {
 
 export function parseFilters(params: Params, now: Date = new Date()): Filters {
   const range = RANGES.find((r) => r.key === first(params.range)) ?? RANGES[1];
-  const traffic: Traffic = first(params.traffic) === "all" ? "all" : "humans";
+  const traffic = TRAFFIC.find((t) => t.key === first(params.traffic))?.key ?? "humans";
   const span = range.hours * 3600_000;
   const end = now;
   const start = new Date(end.getTime() - span);

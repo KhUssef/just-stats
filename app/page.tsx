@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { Kpi } from "@/components/Kpi";
 import { Panel } from "@/components/Panel";
+import { Rules } from "@/components/Rules";
 import { TrafficChart } from "@/components/TrafficChart";
 import { Visits } from "@/components/Visits";
-import { href, parseFilters, RANGES } from "@/lib/range";
+import { href, parseFilters, RANGES, TRAFFIC } from "@/lib/range";
 import * as stats from "@/lib/stats";
 
 export const dynamic = "force-dynamic";
@@ -12,21 +13,23 @@ type Props = { searchParams: Promise<Record<string, string | string[] | undefine
 
 export default async function Dashboard({ searchParams }: Props) {
   const f = parseFilters(await searchParams);
+  const fl = await stats.flags(f);
   const [k, points, pages, referrers, countries, cities, tokens, agents, clicks, reasons, visits] =
     await Promise.all([
-      stats.kpis(f),
-      stats.series(f),
-      stats.pages(f),
-      stats.referrers(f),
-      stats.countries(f),
-      stats.cities(f),
-      stats.tokens(f),
-      stats.agents(f),
-      stats.clicks(f),
-      stats.botReasons(f),
-      stats.visits(f),
+      stats.kpis(f, fl),
+      stats.series(f, fl),
+      stats.pages(f, fl),
+      stats.referrers(f, fl),
+      stats.countries(f, fl),
+      stats.cities(f, fl),
+      stats.tokens(f, fl),
+      stats.agents(f, fl),
+      stats.clicks(f, fl),
+      stats.botReasons(f, fl),
+      stats.visits(f, fl),
     ]);
-  const showBots = f.traffic === "all";
+  const showHumans = f.traffic !== "bots";
+  const showBots = f.traffic !== "humans";
 
   return (
     <main className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8 sm:px-6">
@@ -37,14 +40,14 @@ export default async function Dashboard({ searchParams }: Props) {
         </div>
         <nav aria-label="Filters" className="flex flex-wrap gap-2">
           <div className="flex rounded-md border border-line bg-surface p-0.5 text-sm">
-            {(["humans", "all"] as const).map((t) => (
+            {TRAFFIC.map((t) => (
               <Link
-                key={t}
-                href={href(f, { traffic: t })}
-                aria-current={f.traffic === t ? "page" : undefined}
-                className={`rounded px-3 py-1 ${f.traffic === t ? "bg-bar font-medium text-ink" : "text-ink-3 hover:text-ink-2"}`}
+                key={t.key}
+                href={href(f, { traffic: t.key })}
+                aria-current={f.traffic === t.key ? "page" : undefined}
+                className={`rounded px-3 py-1 ${f.traffic === t.key ? "bg-bar font-medium text-ink" : "text-ink-3 hover:text-ink-2"}`}
               >
-                {t === "humans" ? "People only" : "All traffic"}
+                {t.label}
               </Link>
             ))}
           </div>
@@ -73,16 +76,18 @@ export default async function Dashboard({ searchParams }: Props) {
         </div>
         <div className="px-2 pb-2 pt-4 sm:px-4">
           <div className="mb-2 flex gap-4 px-2 text-xs text-ink-2">
-            <span className="flex items-center gap-1.5">
-              <span className="size-2.5 rounded-sm bg-human" aria-hidden /> People
-            </span>
+            {showHumans && (
+              <span className="flex items-center gap-1.5">
+                <span className="size-2.5 rounded-sm bg-human" aria-hidden /> People
+              </span>
+            )}
             {showBots && (
               <span className="flex items-center gap-1.5">
                 <span className="size-2.5 rounded-sm bg-bot" aria-hidden /> Bots
               </span>
             )}
           </div>
-          <TrafficChart points={points} bucket={f.range.bucket} showBots={showBots} />
+          <TrafficChart points={points} bucket={f.range.bucket} showHumans={showHumans} showBots={showBots} />
         </div>
       </section>
 
@@ -105,6 +110,8 @@ export default async function Dashboard({ searchParams }: Props) {
       />
 
       <Visits visits={visits} />
+
+      <Rules />
     </main>
   );
 }

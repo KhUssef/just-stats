@@ -3,10 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "node scripts/ranges.mjs && next dev",
+    "build": "node scripts/ranges.mjs && next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "ranges": "node scripts/ranges.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.2.1",
