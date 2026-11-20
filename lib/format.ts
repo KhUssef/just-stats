@@ -26,6 +26,15 @@ export function dateTime(ms: number): string {
   }).format(ms);
 }
 
+export function clock(ms: number): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: TZ,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(ms);
+}
+
 export function duration(ms: number): string {
   const s = Math.round(ms / 1000);
   if (s < 60) return `${s}s`;

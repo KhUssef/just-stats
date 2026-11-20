@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { Kpi } from "@/components/Kpi";
 import { Panel } from "@/components/Panel";
+import { RefreshButton } from "@/components/RefreshButton";
 import { Rules } from "@/components/Rules";
 import { TrafficChart } from "@/components/TrafficChart";
 import { Visits } from "@/components/Visits";
+import { clock } from "@/lib/format";
 import { href, parseFilters, RANGES, TRAFFIC } from "@/lib/range";
 import * as stats from "@/lib/stats";
 
@@ -38,7 +40,8 @@ export default async function Dashboard({ searchParams }: Props) {
           <h1 className="text-xl font-semibold tracking-tight">just-stats</h1>
           <p className="text-sm text-ink-3">Traffic on the portfolio, with bots split out</p>
         </div>
-        <nav aria-label="Filters" className="flex flex-wrap gap-2">
+        <nav aria-label="Filters" className="flex flex-wrap items-center gap-2">
+          <RefreshButton loadedAt={clock(f.end.getTime())} />
           <div className="flex rounded-md border border-line bg-surface p-0.5 text-sm">
             {TRAFFIC.map((t) => (
               <Link
