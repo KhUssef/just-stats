@@ -1,10 +1,13 @@
 import Link from "next/link";
+import { CountryBand } from "@/components/CountryBand";
+import { Flag } from "@/components/Flag";
 import { Kpi } from "@/components/Kpi";
 import { Panel } from "@/components/Panel";
 import { RefreshButton } from "@/components/RefreshButton";
 import { Rules } from "@/components/Rules";
 import { TrafficChart } from "@/components/TrafficChart";
 import { Visits } from "@/components/Visits";
+import { countryColor } from "@/lib/countries";
 import { clock } from "@/lib/format";
 import { href, parseFilters, RANGES, TRAFFIC } from "@/lib/range";
 import * as stats from "@/lib/stats";
@@ -16,7 +19,7 @@ type Props = { searchParams: Promise<Record<string, string | string[] | undefine
 export default async function Dashboard({ searchParams }: Props) {
   const f = parseFilters(await searchParams);
   const fl = await stats.flags(f);
-  const [k, points, pages, referrers, countries, cities, tokens, agents, clicks, reasons, visits] =
+  const [k, points, pages, referrers, countries, cities, tokens, agents, clicks, reasons, visits, palette] =
     await Promise.all([
       stats.kpis(f, fl),
       stats.series(f, fl),
@@ -29,19 +32,29 @@ export default async function Dashboard({ searchParams }: Props) {
       stats.clicks(f, fl),
       stats.botReasons(f, fl),
       stats.visits(f, fl),
+      stats.countryPalette(f.end),
     ]);
   const showHumans = f.traffic !== "bots";
   const showBots = f.traffic !== "humans";
+  const place = (r: stats.Row) => ({
+    ...r,
+    color: countryColor(palette, r.code),
+    href: r.code ? href(f, { country: r.code }) : undefined,
+  });
+  const traffic = TRAFFIC.find((t) => t.key === f.traffic)?.label ?? "";
+  const scope = [traffic, f.range.label.toLowerCase(), f.country ? stats.countryName(f.country) : "every country"].join(", ");
 
   return (
     <main className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8 sm:px-6">
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">just-stats</h1>
-          <p className="text-sm text-ink-3">Traffic on the portfolio, with bots split out</p>
+      <header className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">just-stats</h1>
+            <p className="mt-1 text-sm text-ink-3">Who opened the portfolio: {scope}</p>
+          </div>
+          <RefreshButton loadedAt={clock(f.end.getTime())} />
         </div>
         <nav aria-label="Filters" className="flex flex-wrap items-center gap-2">
-          <RefreshButton loadedAt={clock(f.end.getTime())} />
           <div className="flex rounded-md border border-line bg-surface p-0.5 text-sm">
             {TRAFFIC.map((t) => (
               <Link
@@ -67,6 +80,20 @@ export default async function Dashboard({ searchParams }: Props) {
               </Link>
             ))}
           </div>
+          {f.country && (
+            <span className="flex items-center gap-2 rounded-md border border-line bg-surface py-1 pl-2.5 pr-1 text-sm">
+              <span aria-hidden className="size-2.5 rounded-sm" style={{ background: countryColor(palette, f.country) }} />
+              <Flag code={f.country} />
+              <span className="text-ink">{stats.countryName(f.country)}</span>
+              <Link
+                href={href(f, { country: null })}
+                className="rounded px-2 py-0.5 text-ink-3 hover:bg-bar hover:text-ink"
+                aria-label={`Show every country, not only ${stats.countryName(f.country)}`}
+              >
+                Clear
+              </Link>
+            </span>
+          )}
         </nav>
       </header>
 
@@ -94,10 +121,17 @@ export default async function Dashboard({ searchParams }: Props) {
         </div>
       </section>
 
+      <CountryBand rows={countries} total={k.current.visitors} palette={palette} filters={f} />
+
       <div className="grid gap-6 md:grid-cols-2">
         <Panel tabs={[{ name: "Pages", rows: pages }, { name: "Clicks", rows: clicks, metric: "views", metricLabel: "Clicks" }]} />
         <Panel tabs={[{ name: "Referrers", rows: referrers }, { name: "Outreach tokens", rows: tokens }]} />
-        <Panel tabs={[{ name: "Countries", rows: countries }, { name: "Cities", rows: cities }]} />
+        <Panel
+          tabs={[
+            { name: "Cities", rows: cities.map(place), flags: true },
+            { name: "Countries", rows: countries.map(place), flags: true },
+          ]}
+        />
         <Panel
           tabs={[
             { name: "Devices", rows: agents.devices },
@@ -112,7 +146,7 @@ export default async function Dashboard({ searchParams }: Props) {
         empty="No bot traffic in this range"
       />
 
-      <Visits visits={visits} />
+      <Visits visits={visits} palette={palette} filters={f} />
 
       <Rules />
     </main>

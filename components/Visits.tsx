@@ -1,4 +1,8 @@
+import Link from "next/link";
+import { Flag } from "@/components/Flag";
+import { countryColor } from "@/lib/countries";
 import { dateTime, duration, journey } from "@/lib/format";
+import { href, type Filters } from "@/lib/range";
 import { countryName, type Visit } from "@/lib/stats";
 import { parseAgent } from "@/lib/ua";
 
@@ -20,7 +24,7 @@ function Status({ visit }: { visit: Visit }) {
   );
 }
 
-export function Visits({ visits }: { visits: Visit[] }) {
+export function Visits({ visits, palette, filters }: { visits: Visit[]; palette: string[]; filters: Filters }) {
   return (
     <section className="rounded-lg border border-line bg-surface">
       <h2 className="border-b border-line px-4 py-3 text-sm font-medium">Recent visits</h2>
@@ -29,7 +33,7 @@ export function Visits({ visits }: { visits: Visit[] }) {
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[56rem] text-left text-sm">
-            <thead className="text-xs uppercase tracking-wide text-ink-3">
+            <thead className="text-xs text-ink-3">
               <tr className="border-b border-line">
                 <th scope="col" className="px-4 py-2 font-normal">Started</th>
                 <th scope="col" className="px-4 py-2 font-normal">Type</th>
@@ -54,8 +58,26 @@ export function Visits({ visits }: { visits: Visit[] }) {
                       )}
                     </td>
                     <td className="px-4 py-2.5">
-                      <div className="text-ink">{v.city ? `${v.city}, ${countryName(v.country)}` : countryName(v.country)}</div>
-                      <div className="font-mono text-[11px] text-ink-3">{v.ip ?? "no ip"}</div>
+                      <div className="flex items-center gap-2">
+                        <span
+                          aria-hidden
+                          className="size-2 shrink-0 rounded-sm"
+                          style={{ background: countryColor(palette, v.country) }}
+                        />
+                        <Flag code={v.country} />
+                        {v.country ? (
+                          <Link
+                            href={href(filters, { country: v.country })}
+                            className="text-ink underline-offset-2 hover:underline"
+                            title={`Show only ${countryName(v.country)}`}
+                          >
+                            {v.city ? `${v.city}, ${countryName(v.country)}` : countryName(v.country)}
+                          </Link>
+                        ) : (
+                          <span className="text-ink">Unknown</span>
+                        )}
+                      </div>
+                      <div className="mt-0.5 pl-9 font-mono text-[11px] text-ink-3">{v.ip ?? "no ip"}</div>
                     </td>
                     <td className="px-4 py-2.5 text-ink-2" title={v.ua ?? undefined}>
                       {agent.browser}

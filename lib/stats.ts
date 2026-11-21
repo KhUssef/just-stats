@@ -62,14 +62,17 @@ export async function flags(f: Filters): Promise<Flags> {
   return { ips: [...reasons.keys()], reasons: [...reasons.values()] };
 }
 
-// Hits or events in [$1, $2) with the effective `bot` flag and `reason`.
-function source(table: "hits" | "events"): string {
+// Hits or events in [$1, $2) with the effective `bot` flag and `reason`,
+// limited to the selected country. The country code is validated by
+// parseFilters as two letters A-Z, so it is safe to inline.
+function source(table: "hits" | "events", f: Filters): string {
+  const country = f.country ? ` and r.country = '${f.country}'` : "";
   return `src as (
     select r.*, (r.is_bot or x.ip is not null) as bot,
            case when r.is_bot then r.bot_reason else x.reason end as reason
       from ${table} r
       left join unnest($3::text[], $4::text[]) as x(ip, reason) on x.ip = r.ip
-     where r.ts >= $1 and r.ts < $2)`;
+     where r.ts >= $1 and r.ts < $2${country})`;
 }
 
 function traffic(f: Filters): string {
@@ -96,7 +99,7 @@ async function totals(f: Filters, fl: Flags, from: Date, to: Date): Promise<Tota
   const t = traffic(f);
   const [[hits], [events]] = await Promise.all([
     query<{ visitors: number; views: number; all_views: number; bot_views: number }>(
-      `with ${source("hits")}
+      `with ${source("hits", f)}
        select count(distinct ip) filter (where ${NAV} and ${t})::int as visitors,
               count(*) filter (where ${NAV} and ${t})::int as views,
               count(*) filter (where ${NAV})::int as all_views,
@@ -105,7 +108,7 @@ async function totals(f: Filters, fl: Flags, from: Date, to: Date): Promise<Tota
       params(from, to, fl),
     ),
     query<{ clicks: number }>(
-      `with ${source("events")}
+      `with ${source("events", f)}
        select count(*)::int as clicks from src where type = 'click' and ${t}`,
       params(from, to, fl),
     ),
@@ -136,7 +139,7 @@ export interface Point {
 export async function series(f: Filters, fl: Flags): Promise<Point[]> {
   const unit = f.range.bucket;
   return query<Point>(
-    `with ${source("hits")},
+    `with ${source("hits", f)},
      b as (
        select generate_series(
                 date_trunc('${unit}', $1::timestamptz at time zone $5),
@@ -158,19 +161,21 @@ export async function series(f: Filters, fl: Flags): Promise<Point[]> {
 
 export interface Row {
   label: string;
+  // Country code the row belongs to, when the row is about a place.
+  code?: string | null;
   visitors: number;
   views: number;
 }
 
-async function grouped(f: Filters, fl: Flags, expr: string, limit = 10): Promise<Row[]> {
+async function grouped(f: Filters, fl: Flags, expr: string, limit = 10, code = "null"): Promise<Row[]> {
   return query<Row>(
-    `with ${source("hits")}
-     select ${expr} as label,
+    `with ${source("hits", f)}
+     select ${expr} as label, ${code} as code,
             count(distinct ip)::int as visitors,
             count(*)::int as views
        from src
       where ${NAV} and ${traffic(f)}
-      group by 1
+      group by 1, 2
       order by visitors desc, views desc
       limit ${limit}`,
     params(f.start, f.end, fl),
@@ -196,12 +201,30 @@ export function countryName(code: string | null): string {
 }
 
 export async function countries(f: Filters, fl: Flags): Promise<Row[]> {
-  const rows = await grouped(f, fl, "country");
-  return rows.map((r) => ({ ...r, label: countryName(r.label) }));
+  const rows = await grouped(f, fl, "country", 12, "country");
+  return rows.map((r) => ({ ...r, label: countryName(r.code ?? null) }));
 }
 
 export async function cities(f: Filters, fl: Flags): Promise<Row[]> {
-  return grouped(f, fl, "coalesce(city || ', ' || country, country, 'Unknown')");
+  const rows = await grouped(f, fl, "coalesce(city, 'Unknown city')", 10, "country");
+  return rows.map((r) => ({ ...r, label: `${r.label}, ${countryName(r.code ?? null)}` }));
+}
+
+export const COUNTRY_SLOTS = 7;
+
+// The countries that own a colour: the ones with the most visitors over the
+// last 90 days. Ranked over a fixed window, so a country keeps its colour
+// whatever range or filter is on screen.
+export async function countryPalette(now: Date): Promise<string[]> {
+  const rows = await query<{ country: string }>(
+    `select country from hits
+      where ts >= $1 and country is not null and not is_bot
+      group by country
+      order by count(distinct ip) desc, country
+      limit ${COUNTRY_SLOTS}`,
+    [new Date(now.getTime() - 90 * 24 * 3600_000)],
+  );
+  return rows.map((r) => r.country);
 }
 
 export async function pages(f: Filters, fl: Flags): Promise<Row[]> {
@@ -223,7 +246,7 @@ export interface AgentRows {
 // in the same bucket counts twice; at this traffic level that is negligible.
 export async function agents(f: Filters, fl: Flags): Promise<AgentRows> {
   const raw = await query<{ ua: string | null; visitors: number; views: number }>(
-    `with ${source("hits")}
+    `with ${source("hits", f)}
      select ua, count(distinct ip)::int as visitors, count(*)::int as views
        from src where ${NAV} and ${traffic(f)} group by ua`,
     params(f.start, f.end, fl),
@@ -244,7 +267,7 @@ export async function agents(f: Filters, fl: Flags): Promise<AgentRows> {
 
 export async function clicks(f: Filters, fl: Flags): Promise<Row[]> {
   return query<Row>(
-    `with ${source("events")}
+    `with ${source("events", f)}
      select coalesce(name, href, 'Unnamed') as label,
             count(distinct ip)::int as visitors,
             count(*)::int as views
@@ -260,7 +283,7 @@ export async function clicks(f: Filters, fl: Flags): Promise<Row[]> {
 // Always over bot traffic, whatever the filter: what was removed and why.
 export async function botReasons(f: Filters, fl: Flags): Promise<Row[]> {
   return query<Row>(
-    `with ${source("hits")}
+    `with ${source("hits", f)}
      select coalesce(reason, 'unknown') as label,
             count(distinct ip)::int as visitors,
             count(*)::int as views
@@ -306,7 +329,7 @@ export async function visits(f: Filters, fl: Flags, limit = 50): Promise<Visit[]
     reasons: string[];
     clicks: number;
   }>(
-    `with ${source("hits")},
+    `with ${source("hits", f)},
      h as (
        select ts, path, ip, country, city, ua, token, referer, bot, reason,
               case when ts - lag(ts) over (partition by ip order by ts) <= interval '30 minutes'
